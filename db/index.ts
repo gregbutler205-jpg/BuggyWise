@@ -6,18 +6,30 @@ import * as schema from "./schema";
 // data layer is async (unlike the old better-sqlite3 driver, which was
 // synchronous). See db/index.ts git history if you ever need to go back to
 // local-only SQLite.
-if (!process.env.TURSO_DATABASE_URL || !process.env.TURSO_AUTH_TOKEN) {
-  throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set in app/.env.local");
+//
+// This runs eagerly at import time (below), so a malformed value here fails
+// the whole build/boot with a clear message instead of @libsql/client's
+// generic "TypeError: Invalid URL", which gives no hint which var is wrong.
+const dbUrl = process.env.TURSO_DATABASE_URL;
+const authToken = process.env.TURSO_AUTH_TOKEN;
+if (!dbUrl || !authToken) {
+  throw new Error("TURSO_DATABASE_URL and TURSO_AUTH_TOKEN must be set (in app/.env.local, or as Vercel project env vars)");
+}
+try {
+  new URL(dbUrl);
+} catch {
+  throw new Error(
+    `TURSO_DATABASE_URL is not a valid URL (got ${dbUrl.length} chars, starts "${dbUrl.slice(0, 12)}"). ` +
+      `Check for stray quotes/whitespace, or that the whole value pasted correctly — expected shape: ` +
+      `libsql://<db-name>-<org-slug>.<region>.turso.io`
+  );
 }
 
 // Next.js dev server reloads modules; keep one connection per process.
 const globalForDb = globalThis as unknown as { __bwDb?: ReturnType<typeof createDb> };
 
 function createDb() {
-  const client = createClient({
-    url: process.env.TURSO_DATABASE_URL!,
-    authToken: process.env.TURSO_AUTH_TOKEN!,
-  });
+  const client = createClient({ url: dbUrl!, authToken: authToken! });
   return drizzle(client, { schema });
 }
 
