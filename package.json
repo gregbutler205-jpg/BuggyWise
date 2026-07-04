@@ -9,7 +9,7 @@
     "lint": "eslint",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "seed": "tsx scripts/seed-import.ts",
+    "seed": "tsx --env-file=.env.local scripts/seed-import.ts",
     "icons": "tsx scripts/make-icons.ts"
   },
   "dependencies": {

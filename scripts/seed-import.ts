@@ -18,13 +18,11 @@ import path from "path";
 import fs from "fs";
 import { eq } from "drizzle-orm";
 
-// load .env.local before importing the db (TURSO_DATABASE_URL/TURSO_AUTH_TOKEN)
-try {
-  process.loadEnvFile(path.join(process.cwd(), ".env.local"));
-} catch {
-  /* no .env.local yet — fine */
-}
-
+// env vars (TURSO_DATABASE_URL/TURSO_AUTH_TOKEN) must be loaded via the
+// `tsx --env-file=.env.local` flag in package.json's "seed" script, NOT a
+// process.loadEnvFile() call here — static imports are hoisted above any
+// top-level code by tsx's compiler regardless of source order, so `db`
+// below would already be initialized (and throw) before a call here ran.
 import { db, stores, canonicalItems, storeProducts, prices, lists, listItems, importReview } from "../db";
 import { parseItemName, looksNonGrocery } from "../lib/item-name-parser";
 import { parseSize, unitPrice } from "../lib/units";
