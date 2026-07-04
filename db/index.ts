@@ -29,7 +29,15 @@ try {
 const globalForDb = globalThis as unknown as { __bwDb?: ReturnType<typeof createDb> };
 
 function createDb() {
-  const client = createClient({ url: dbUrl!, authToken: authToken! });
+  // concurrency: 1 forces requests through the client's internal HTTP
+  // transport one at a time. Without this, concurrent requests (e.g. many
+  // <Link> prefetches firing at once) corrupt the shared client's
+  // Authorization header — producing "Bearer <token> <token>" and a hard
+  // 500. Reproduced locally with 8 parallel requests; a custom `fetch`
+  // (tried: undici) doesn't fix it and breaks in a different way (realm
+  // mismatch with @libsql/client's internal Request object), so this is
+  // the correctness-over-throughput fix until upstream resolves it.
+  const client = createClient({ url: dbUrl!, authToken: authToken!, concurrency: 1 });
   return drizzle(client, { schema });
 }
 
