@@ -22,15 +22,17 @@ async function hmac(secret: string, message: string): Promise<string> {
   return toHex(sig);
 }
 
+const ENV_HINT = "app/.env.local locally, or your hosting provider's project environment variables in production";
+
 function sessionSecret(): string {
   const secret = process.env.SESSION_SECRET;
-  if (!secret) throw new Error("SESSION_SECRET is not set in app/.env.local");
+  if (!secret) throw new Error(`SESSION_SECRET is not set (check ${ENV_HINT})`);
   return secret;
 }
 
 export function checkPassword(candidate: string): boolean {
   const expected = process.env.SITE_PASSWORD;
-  if (!expected) throw new Error("SITE_PASSWORD is not set in app/.env.local");
+  if (!expected) throw new Error(`SITE_PASSWORD is not set (check ${ENV_HINT})`);
   return candidate === expected;
 }
 
