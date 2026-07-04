@@ -1,65 +1,88 @@
+import Link from "next/link";
 import Image from "next/image";
+import { desc, sql } from "drizzle-orm";
+import { db, lists, listItems } from "@/db";
+import { ListActions } from "./list-actions";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function HomePage() {
+  const allLists = await db.select().from(lists).orderBy(desc(lists.updatedAt));
+  const itemCounts = await db
+    .select({ listId: listItems.listId, count: sql<number>`count(*)` })
+    .from(listItems)
+    .groupBy(listItems.listId);
+  const counts = new Map(itemCounts.map((c) => [c.listId, c.count]));
+  const drafts = allLists.filter((l) => l.isDraft);
+  const recurring = allLists.filter((l) => l.isRecurring && !l.isDraft);
+  const oneOffs = allLists.filter((l) => !l.isRecurring && !l.isDraft);
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="space-y-8">
+      {allLists.length === 0 && (
+        <div className="text-center py-12 space-y-4">
+          <Image src="/icons/icon-128.png" alt="BuggyWise mascot" width={96} height={96} className="mx-auto" />
+          <p className="text-bw-ink/70">No lists yet — let&apos;s get your buggy rolling.</p>
+          <Link href="/capture" className="inline-block bg-bw-green text-white font-semibold px-5 py-2.5 rounded-full hover:bg-bw-green-dark">
+            Start a list
+          </Link>
+        </div>
+      )}
+
+      {drafts.length > 0 && (
+        <section>
+          <h2 className="font-bold text-lg mb-2">📋 Proposed for you</h2>
+          <p className="text-sm text-bw-ink/60 mb-3">
+            Built from your Walmart purchase history — approve to keep as a recurring list.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+          <ul className="space-y-2">
+            {drafts.map((l) => (
+              <ListCard key={l.id} id={l.id} name={l.name} itemCount={counts.get(l.id) ?? 0} badge="draft" />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {recurring.length > 0 && (
+        <section>
+          <h2 className="font-bold text-lg mb-3">🔁 Recurring lists</h2>
+          <ul className="space-y-2">
+            {recurring.map((l) => (
+              <ListCard key={l.id} id={l.id} name={l.name} itemCount={counts.get(l.id) ?? 0} badge="recurring" />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {oneOffs.length > 0 && (
+        <section>
+          <h2 className="font-bold text-lg mb-3">🛒 Trip lists</h2>
+          <ul className="space-y-2">
+            {oneOffs.map((l) => (
+              <ListCard key={l.id} id={l.id} name={l.name} itemCount={counts.get(l.id) ?? 0} />
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {allLists.length > 0 && (
+        <Link href="/capture" className="inline-block bg-bw-green text-white font-semibold px-5 py-2.5 rounded-full hover:bg-bw-green-dark">
+          + New list
+        </Link>
+      )}
     </div>
+  );
+}
+
+function ListCard({ id, name, itemCount, badge }: { id: number; name: string; itemCount: number; badge?: "draft" | "recurring" }) {
+  return (
+    <li className="bg-white rounded-xl border border-bw-ink/10 px-4 py-3 flex items-center justify-between gap-3">
+      <Link href={`/lists/${id}`} className="flex-1 min-w-0">
+        <span className="font-medium">{name}</span>
+        <span className="text-sm text-bw-ink/50 ml-2">{itemCount} items</span>
+        {badge === "draft" && <span className="ml-2 text-xs bg-bw-orange/15 text-bw-orange-dark px-2 py-0.5 rounded-full">needs approval</span>}
+      </Link>
+      <ListActions listId={id} isDraft={badge === "draft"} />
+    </li>
   );
 }

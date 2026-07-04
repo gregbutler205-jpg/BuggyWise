@@ -1,26 +1,32 @@
 @import "tailwindcss";
 
+/* BuggyWise brand palette, sampled from the mascot/wordmark art:
+   leaf green + buggy orange + deep ink */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #fbfaf7;
+  --foreground: #1d2433;
+  --bw-green: #62a830;
+  --bw-green-dark: #4c8523;
+  --bw-orange: #f47b20;
+  --bw-orange-dark: #d96510;
+  --bw-cream: #fff7ee;
+  --bw-ink: #1d2433;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-bw-green: var(--bw-green);
+  --color-bw-green-dark: var(--bw-green-dark);
+  --color-bw-orange: var(--bw-orange);
+  --color-bw-orange-dark: var(--bw-orange-dark);
+  --color-bw-cream: var(--bw-cream);
+  --color-bw-ink: var(--bw-ink);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }
