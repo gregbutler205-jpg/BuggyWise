@@ -1,5 +1,6 @@
-import { createClient } from "@libsql/client";
+import { createClient } from "@tursodatabase/serverless/compat";
 import { drizzle } from "drizzle-orm/libsql";
+import type { Client } from "@libsql/core/api";
 import * as schema from "./schema";
 
 // Remote Turso database — every query is a network call now, so the entire
@@ -29,16 +30,22 @@ try {
 const globalForDb = globalThis as unknown as { __bwDb?: ReturnType<typeof createDb> };
 
 function createDb() {
-  // concurrency: 1 forces requests through the client's internal HTTP
-  // transport one at a time. Without this, concurrent requests (e.g. many
-  // <Link> prefetches firing at once) corrupt the shared client's
-  // Authorization header — producing "Bearer <token> <token>" and a hard
-  // 500. Reproduced locally with 8 parallel requests; a custom `fetch`
-  // (tried: undici) doesn't fix it and breaks in a different way (realm
-  // mismatch with @libsql/client's internal Request object), so this is
-  // the correctness-over-throughput fix until upstream resolves it.
-  const client = createClient({ url: dbUrl!, authToken: authToken!, concurrency: 1 });
-  return drizzle(client, { schema });
+  // Using @tursodatabase/serverless (via its drizzle-compatible /compat
+  // export) instead of @libsql/client directly. The latter's internal
+  // Hrana-over-HTTP transport corrupted its own Authorization header under
+  // concurrent/repeated requests in production on Vercel — intermittent,
+  // not reproducible with a handful of local requests, symptom:
+  // `Headers.set: "Bearer <token> <token>" is an invalid header value`.
+  // concurrency:1 (@libsql/client's own mitigation option) did NOT fix it.
+  // @tursodatabase/serverless is a from-scratch, plain-fetch()-based
+  // serverless driver built to avoid exactly this class of bug.
+  const client = createClient({ url: dbUrl!, authToken: authToken! });
+  // drizzle-orm/libsql's stable release types against @libsql/core's Client,
+  // which declares a `reconnect()` method this driver's compat layer doesn't
+  // implement — but drizzle-orm's actual code never calls it (grepped the
+  // package: zero references), so this is a type-level-only gap, safe to
+  // cast around without a major drizzle-orm version bump.
+  return drizzle(client as unknown as Client, { schema });
 }
 
 export const db = globalForDb.__bwDb ?? (globalForDb.__bwDb = createDb());
