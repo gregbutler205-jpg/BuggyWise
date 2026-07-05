@@ -67,9 +67,13 @@ export function parseItemName(raw: string): ParsedItemName {
   return { productName, brand, sizeText, size };
 }
 
-// Obvious non-grocery keywords (spec §10.0 rule d) — tagged, owner can exclude.
+// Obvious non-grocery keywords (spec §10.0 rule d) — items a typical grocery
+// store's food/consumables sections don't carry (Home & Garden, toys,
+// clothing, electronics, automotive), so comparing them against Kroger/other
+// grocery-only stores doesn't make sense. Used both for the seed import and
+// to filter list-capture parsing (lib/parse-list.ts).
 const NON_GROCERY_RE =
-  /\b(candle|apparel|shirt|sock|shoe|hardware|screwdriver|drill|battery|batteries|light bulb|notebook|pencil|toy|towel set|bakeware|cookware|pan\b|skillet|hanger|storage bin|extension cord|phone|charger|earbud|headphone)\b/i;
+  /\b(candle|apparel|shirt|sock|shoe|hardware|screwdriver|drill|battery|batteries|light bulb|notebook|pencil|toy|towel set|bakeware|cookware|pan\b|skillet|hanger|storage bin|extension cord|phone|charger|earbud|headphone|plant food|fertilizer|potting soil|mulch|pesticide|insecticide|weed killer|grass seed|garden hose|lawn mower|planter\b|motor oil|windshield wiper|tire\b|jacket|underwear)\b/i;
 
 export function looksNonGrocery(name: string): boolean {
   return NON_GROCERY_RE.test(name);

@@ -5,6 +5,7 @@
  * no API key is configured.
  */
 import { claude, hasClaudeKey, extractJson, CLAUDE_MODEL } from "./claude";
+import { looksNonGrocery } from "./item-name-parser";
 
 export type ParsedListItem = {
   item: string;
@@ -28,6 +29,17 @@ Only set quantity above 1 when the shopper is actually buying more than one of
 that item/package — e.g. an explicit "x2", "2 lb ground beef" (a loose-weight
 item, not a packaged count), or a cart quantity field showing more than one.
 
+EXCLUDE items that a typical grocery store doesn't stock at all — this list is
+used to compare prices across grocery stores (Kroger, Aldi, etc.), and these
+can't be priced there. Leave out Home & Garden and lawn-care products (plant
+food, fertilizer, potting soil, mulch, grass seed), toys, clothing, electronics
+(phones, headphones, chargers), and automotive supplies — even if they
+appeared in the same cart/list as the groceries.
+Do NOT exclude ordinary grocery-store household consumables even though
+they're not food — paper towels, toilet paper, foil, trash bags, dish soap,
+laundry detergent, and cleaning supplies are all normal grocery items and
+belong in the list.
+
 Reply with ONLY a JSON array: [{"item", "quantity", "unit", "notes"}]. Ignore non-list content (page headers, doodles, crossed-out items, prices, URLs, "Subscribe"/return-policy boilerplate).`;
 
 export async function parseListText(text: string): Promise<ParsedListItem[]> {
@@ -38,7 +50,7 @@ export async function parseListText(text: string): Promise<ParsedListItem[]> {
     messages: [{ role: "user", content: `${PARSE_PROMPT}\n\nList:\n${text}` }],
   });
   const out = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  return extractJson<ParsedListItem[]>(out);
+  return filterNonGrocery(extractJson<ParsedListItem[]>(out));
 }
 
 export async function parseListImage(base64: string, mediaType: string): Promise<ParsedListItem[]> {
@@ -63,13 +75,21 @@ export async function parseListImage(base64: string, mediaType: string): Promise
     ],
   });
   const out = resp.content.filter((b) => b.type === "text").map((b) => b.text).join("");
-  return extractJson<ParsedListItem[]>(out);
+  return filterNonGrocery(extractJson<ParsedListItem[]>(out));
+}
+
+/** Belt-and-suspenders: the prompt already asks Claude to exclude Home &
+ *  Garden/toys/clothing/etc., but that's judgment call, not guaranteed —
+ *  drop anything the same keyword filter used by the seed import would
+ *  flag, so filtering stays consistent regardless of a given LLM response. */
+function filterNonGrocery(items: ParsedListItem[]): ParsedListItem[] {
+  return items.filter((i) => !looksNonGrocery(i.item));
 }
 
 /** No-API-key fallback for typed/pasted lists: one item per line,
  *  understands "2 lb ground beef", "milk x2", "3 cans corn". */
 export function fallbackLineParse(text: string): ParsedListItem[] {
-  return text
+  const items = text
     .split(/\r?\n|,(?=\s*[a-z])/i)
     // strip bullets and "1." / "3)" list numbering, but never bare leading
     // quantities — "2 lb ground beef" keeps its 2
@@ -94,4 +114,5 @@ export function fallbackLineParse(text: string): ParsedListItem[] {
       }
       return { item: item.trim(), quantity, unit, notes: null };
     });
+  return filterNonGrocery(items);
 }
