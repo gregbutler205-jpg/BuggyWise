@@ -105,7 +105,7 @@ export async function compareList(listId: number, storeIds: number[]): Promise<C
     const byStore = new Map<number, ItemMatch>();
     const matches: SerializedMatch[] = [];
     for (const sid of storeIds) {
-      const m = await matchItemAtStore(li, catalogs.get(sid)!, sid);
+      const m = await matchItemAtStore(li, catalogs.get(sid)!, sid, storeNames.get(sid) ?? "");
       byStore.set(sid, m);
       matches.push({
         storeId: sid,

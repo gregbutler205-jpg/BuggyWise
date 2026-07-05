@@ -109,10 +109,11 @@ export function ReviewScreen({
                 className="rounded-md border border-bw-ink/20 px-2 py-1 bg-white"
               >
                 <option value="any">Any brand</option>
+                <option value="store_brand">Store brand</option>
                 <option value="specific">Specific brand</option>
                 <option value="exact">Don&apos;t substitute</option>
               </select>
-              {item.brandPreference !== "any" && (
+              {(item.brandPreference === "specific" || item.brandPreference === "exact") && (
                 <input
                   value={item.preferredBrand ?? ""}
                   onChange={(e) =>

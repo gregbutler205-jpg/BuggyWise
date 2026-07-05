@@ -114,7 +114,9 @@ export const listItems = sqliteTable(
     quantity: real("quantity").notNull().default(1),
     unit: text("unit"),
     notes: text("notes"),
-    // 'any' | 'specific' | 'exact'  ('exact' = don't substitute)
+    // 'any' | 'specific' | 'exact' | 'store_brand'
+    // ('exact' = don't substitute; 'store_brand' = match to whichever brand
+    // is THIS store's own private label, independently at each store)
     brandPreference: text("brand_preference").notNull().default("any"),
     preferredBrand: text("preferred_brand"),
     canonicalItemId: integer("canonical_item_id").references(() => canonicalItems.id),

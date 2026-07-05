@@ -114,6 +114,15 @@ export type KrogerProduct = {
   promoPrice: number | null;
 };
 
+// Confirmed empirically (2026-07): searching Kroger's Products API for a term
+// containing the standalone word "all" returns ZERO results even when the
+// rest of the term is a perfectly good match — e.g. "All Natural Ground Beef
+// Chuck" finds nothing, but "Natural Ground Beef Chuck" (same term minus
+// "all") finds real products. Doesn't reproduce for other filler words
+// ("natural", "fresh", "organic" are all fine) — this is specific to "all",
+// likely treated as a reserved/wildcard token by their search engine.
+const KROGER_BREAKING_WORDS = /\ball\b/gi;
+
 /**
  * Kroger's Products API rejects `filter.term` values over 8 words
  * (PRODUCT-2019). Long list-item names ("Jell-O Lemon-Lime Artificially
@@ -122,9 +131,10 @@ export type KrogerProduct = {
  * actual product type, e.g. "...Pasta Sauce") rather than just truncating
  * from the front, which tends to cut off exactly the product type.
  */
-function truncateTermForKroger(term: string): string {
-  const words = term.trim().split(/\s+/);
-  if (words.length <= 8) return term;
+function cleanTermForKroger(term: string): string {
+  const cleaned = term.replace(KROGER_BREAKING_WORDS, " ").replace(/\s+/g, " ").trim();
+  const words = cleaned.split(/\s+/);
+  if (words.length <= 8) return cleaned;
   return [...words.slice(0, 4), ...words.slice(-4)].join(" ");
 }
 
@@ -135,7 +145,7 @@ async function searchKrogerProducts(
 ): Promise<{ products: KrogerProduct[]; maxAgeSeconds: number | null }> {
   const token = await getToken();
   const url = new URL(`${API_BASE}/products`);
-  url.searchParams.set("filter.term", truncateTermForKroger(term));
+  url.searchParams.set("filter.term", cleanTermForKroger(term));
   url.searchParams.set("filter.locationId", locationId);
   url.searchParams.set("filter.limit", String(limit));
   const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });

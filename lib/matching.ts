@@ -50,7 +50,40 @@ export type ItemMatch = {
 const STOPWORDS = new Set([
   "a", "an", "the", "of", "and", "or", "with", "fresh", "great", "value",
   "pack", "ct", "oz", "lb", "fl", "each", "1", "2", "3",
+  // commodity-marketing descriptors: vary by store for the *same* underlying
+  // product ("All Natural" at Walmart vs plain "Kroger Ground Beef"), so
+  // they shouldn't dilute the token-overlap score for meat/produce. Kept
+  // deliberately short — words like "select"/"choice"/"premium" are left
+  // out since they can be part of an actual product name (e.g.
+  // "Select-a-Size" paper towels), not just a commodity descriptor.
+  "all", "natural", "organic",
 ]);
+
+// Known store-brand (private label) names, spec §6 "Any brand allows
+// store-brand swaps". Keyed by a store-name substring since store rows are
+// user-added with arbitrary names. Extend as more chains get real data.
+const STORE_BRANDS: Record<string, string[]> = {
+  walmart: ["great value", "equate", "mainstays", "marketside", "freshness guaranteed", "sam's choice"],
+  kroger: ["kroger", "simple truth", "private selection"],
+};
+
+function storeBrandFamily(storeName: string): string[] | null {
+  const lower = storeName.toLowerCase();
+  for (const key of Object.keys(STORE_BRANDS)) {
+    if (lower.includes(key)) return STORE_BRANDS[key];
+  }
+  return null;
+}
+
+/** Is this product this store's own private label — or unbranded (which,
+ *  for a store's generic commodity cuts like unlabeled meat, counts the
+ *  same way)? */
+function isStoreBrandProduct(storeName: string, brand: string | null): boolean {
+  if (!brand) return true;
+  const family = storeBrandFamily(storeName);
+  if (!family) return false; // unknown chain — can't judge, don't guess
+  return family.includes(brand.toLowerCase());
+}
 
 function tokens(s: string): string[] {
   return s
@@ -132,7 +165,8 @@ export function scoreCandidate(
   queryTokens: string[],
   product: PricedProduct,
   brandPreference: string,
-  preferredBrand: string | null
+  preferredBrand: string | null,
+  storeName: string
 ): number {
   const hay = new Set(
     [...tokens(product.name), ...tokens(product.canonicalName ?? "")].map(fold)
@@ -150,6 +184,15 @@ export function scoreCandidate(
     if ((product.brand ?? "").toLowerCase() === preferredBrand.toLowerCase()) score += 0.25;
     else score -= 0.25;
   }
+  if (brandPreference === "store_brand") {
+    // strongly prefer this store's own private label / unbranded generic
+    if (isStoreBrandProduct(storeName, product.brand)) score += 0.3;
+    else score -= 0.3;
+  } else if (isStoreBrandProduct(storeName, product.brand)) {
+    // 'any brand' explicitly allows store-brand swaps (spec §6) — small
+    // nudge even without an explicit preference
+    score += 0.1;
+  }
   if (!product.isGrocery) score -= 0.5;
   if (!product.latest) score -= 0.1; // unpriced products are weaker picks
   return score;
@@ -163,6 +206,7 @@ export async function matchItemAtStore(
   listItem: ItemMatch["listItem"],
   catalog: PricedProduct[],
   storeId: number,
+  storeName: string,
   opts: { allowLlm?: boolean } = {}
 ): Promise<ItemMatch> {
   const cacheKey = `${listItem.name.toLowerCase().trim()}|pref:${listItem.brandPreference}:${listItem.preferredBrand ?? ""}|store:${storeId}`;
@@ -188,9 +232,11 @@ export async function matchItemAtStore(
   }
 
   const qTokens = tokens(listItem.name);
-  let scored = catalog
-    .map((p) => ({ ...p, score: scoreCandidate(qTokens, p, listItem.brandPreference, listItem.preferredBrand) }))
-    .filter((p) => p.score >= MIN_SCORE);
+  const allScored = catalog.map((p) => ({
+    ...p,
+    score: scoreCandidate(qTokens, p, listItem.brandPreference, listItem.preferredBrand, storeName),
+  }));
+  let scored = allScored.filter((p) => p.score >= MIN_SCORE);
 
   // 'exact' = don't substitute: restrict to the preferred brand (or exact text)
   if (listItem.brandPreference === "exact") {
@@ -205,12 +251,27 @@ export async function matchItemAtStore(
   scored.sort((a, b) => b.score - a.score);
   let top = scored.slice(0, TOP_N);
   let matchSource: ItemMatch["matchSource"] = "heuristic";
+  const canUseLlm = opts.allowLlm !== false && hasClaudeKey();
 
-  // LLM assist when the heuristic isn't confident (spec §6) — handles "pb",
-  // "grd beef", brand variants. Cached so repeat items cost nothing.
-  if (
-    opts.allowLlm !== false &&
-    hasClaudeKey() &&
+  // Nothing cleared MIN_SCORE — before giving up, let the LLM judge the
+  // best raw-scored candidates anyway. Commodity items (meat, produce) often
+  // have store-specific descriptive wording ("All Natural" vs a store's
+  // plain "Ground Beef") that under-scores a genuinely correct match on
+  // pure token overlap; Claude can recognize it's the same product.
+  if (top.length === 0 && canUseLlm) {
+    const rescue = allScored.filter((p) => p.score > 0).sort((a, b) => b.score - a.score).slice(0, TOP_N);
+    if (rescue.length > 0) {
+      try {
+        top = await llmRank(listItem.name, rescue);
+        matchSource = "llm";
+      } catch (e) {
+        console.warn("LLM rescue ranking failed:", e);
+      }
+    }
+  } else if (
+    // LLM assist when the heuristic isn't confident (spec §6) — handles "pb",
+    // "grd beef", brand variants. Cached so repeat items cost nothing.
+    canUseLlm &&
     top.length > 0 &&
     (top[0].score < LLM_THRESHOLD || top.length > 1)
   ) {
@@ -288,7 +349,7 @@ async function llmRank<T extends PricedProduct & { score: number }>(
 Candidate products at this store:
 ${candidates.map((c, i) => `${i}: ${c.name}${c.sizeText ? ` (${c.sizeText})` : ""}`).join("\n")}
 
-Which candidates are genuinely the product the shopper wants (right product type — e.g. "pb" means peanut butter, "grd beef" means ground beef)? Reply with ONLY a JSON array of objects: {"index": <number>, "valid": <boolean>, "score": <0-1 how well it matches>}`,
+Which candidates are genuinely the product the shopper wants (right product type — e.g. "pb" means peanut butter, "grd beef" means ground beef)? Store-brand naming varies a lot for the same underlying commodity item — e.g. "All Natural 80% Lean Ground Beef Chuck" at one store and "Kroger Ground Beef 80/20" at another are the SAME product; don't penalize a candidate just for using different marketing/descriptive wording than the shopper's list. Reply with ONLY a JSON array of objects: {"index": <number>, "valid": <boolean>, "score": <0-1 how well it matches>}`,
       },
     ],
   });

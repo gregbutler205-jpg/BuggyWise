@@ -15,11 +15,20 @@ export type ParsedListItem = {
 
 const PARSE_PROMPT = `Extract the grocery shopping list. For each item return:
 - item: the product name, expanded from shorthand ("pb" -> "peanut butter", "grd beef" -> "ground beef")
-- quantity: number (default 1)
+- quantity: how many of that exact item/package the shopper is buying (default 1)
 - unit: e.g. "lb", "gallon", "dozen", "cans" or null
 - notes: anything else the writer indicated (brand, "ripe", "for the party") or null
 
-Reply with ONLY a JSON array: [{"item", "quantity", "unit", "notes"}]. Ignore non-list content (page headers, doodles, crossed-out items).`;
+CRITICAL — quantity vs. package size: a number that is part of the PRODUCT'S OWN
+name or size (a multi-pack count, roll count, cup count, etc.) is NOT the
+quantity, even when it appears right next to or before the item name. Buying
+one "Coca-Cola ... 12 Pack" is quantity 1, not 12. One "Bounty ... 6 Triple
+Rolls" is quantity 1, not 6. One "Jell-O ... 4 ct Cups" is quantity 1, not 4.
+Only set quantity above 1 when the shopper is actually buying more than one of
+that item/package — e.g. an explicit "x2", "2 lb ground beef" (a loose-weight
+item, not a packaged count), or a cart quantity field showing more than one.
+
+Reply with ONLY a JSON array: [{"item", "quantity", "unit", "notes"}]. Ignore non-list content (page headers, doodles, crossed-out items, prices, URLs, "Subscribe"/return-policy boilerplate).`;
 
 export async function parseListText(text: string): Promise<ParsedListItem[]> {
   if (!hasClaudeKey()) return fallbackLineParse(text);
