@@ -86,7 +86,7 @@ export function ScenarioPicker({ result }: { result: CompareResult }) {
                   {sc.storeIds.length === 1 ? "🏪 " : "🛣️ "}
                   {sc.label}
                 </span>
-                <span className="text-xl font-bold">{fmt(sc.grandTotal)}</span>
+                <span className="text-xl font-bold">{fmt(sc.comparableTotal)}</span>
               </div>
               <div className="text-sm text-bw-ink/60 flex gap-3 flex-wrap mt-1">
                 {isBaseline && <span className="text-bw-ink/70 font-medium">baseline (one stop)</span>}
@@ -97,9 +97,16 @@ export function ScenarioPicker({ result }: { result: CompareResult }) {
                   <span>+{fmt(Math.max(0, sc.marginalSavings))} vs one fewer stop</span>
                 )}
                 <span>
-                  {sc.coverage.priced}/{sc.coverage.total} items priced
+                  {sc.comparableCoverage} items compared
                 </span>
               </div>
+              {sc.exclusiveItems.length > 0 && (
+                <p className="text-xs text-bw-ink/50 mt-1">
+                  + {fmt(sc.exclusiveItems.reduce((sum, e) => sum + e.lineTotal, 0))} for{" "}
+                  {sc.exclusiveItems.length} item{sc.exclusiveItems.length === 1 ? "" : "s"} only found here (excluded
+                  from the comparison above): {sc.exclusiveItems.map((e) => e.name).join(", ")}
+                </p>
+              )}
               {sc.unpricedItems.length > 0 && (
                 <p className="text-xs text-bw-ink/50 mt-1">
                   🔴 price unknown: {sc.unpricedItems.map((u) => u.name).join(", ")}
@@ -154,10 +161,18 @@ export function ScenarioPicker({ result }: { result: CompareResult }) {
             <span>Grand total</span>
             <span>{fmt(selected.grandTotal)}</span>
           </div>
+          {selected.exclusiveItems.length > 0 && (
+            <p className="text-xs text-bw-ink/50 -mt-2">
+              Includes {fmt(selected.exclusiveItems.reduce((sum, e) => sum + e.lineTotal, 0))} for{" "}
+              {selected.exclusiveItems.length} item{selected.exclusiveItems.length === 1 ? "" : "s"} only found
+              here — not counted in the store-vs-store comparison above.
+            </p>
+          )}
           {baseline && selected.key !== baseline.key && (
             <p className="text-sm text-bw-green-dark font-medium">
               🐞 BuggyWise saves you {fmt(Math.max(0, selected.savings))} vs everything at{" "}
-              {baseline.label.replace("Everything at ", "")}!
+              {baseline.label.replace("Everything at ", "")} (on the {selected.comparableCoverage} items available
+              at both)!
             </p>
           )}
           <button

@@ -30,6 +30,15 @@ import { parseSize, unitPrice } from "@/lib/units";
 const TOKEN_URL = "https://api.kroger.com/v1/connect/oauth2/token";
 const API_BASE = "https://api.kroger.com/v1";
 
+// Node's fetch (undici) sends no User-Agent by default. Kroger's Akamai-
+// fronted API has been observed returning a WAF-level "Access Denied" (an
+// Akamai edge error page, not a Kroger API error) on requests from Vercel's
+// serverless IPs — a blank/generic User-Agent is a common trigger for that
+// class of bot-detection block. Identifying honestly as this app, rather
+// than spoofing a browser, is both safer against ToS concerns and just as
+// likely to clear a "no UA at all" heuristic.
+const KROGER_HEADERS = { "User-Agent": "BuggyWise/1.0 (+grocery price comparison app)" };
+
 // Conservative fallback when Kroger's response has no Cache-Control header —
 // overridable via env, but never used if the header specifies something shorter.
 const DEFAULT_CACHE_TTL_SECONDS = Number(process.env.KROGER_CACHE_TTL_HOURS ?? 24) * 3600;
@@ -50,6 +59,7 @@ async function getToken(): Promise<string> {
   const res = await fetch(TOKEN_URL, {
     method: "POST",
     headers: {
+      ...KROGER_HEADERS,
       "Content-Type": "application/x-www-form-urlencoded",
       Authorization: `Basic ${basic}`,
     },
@@ -82,7 +92,7 @@ export async function searchKrogerLocations(zip: string, radiusMiles = 10, limit
   url.searchParams.set("filter.zipCode.near", zip);
   url.searchParams.set("filter.radiusInMiles", String(radiusMiles));
   url.searchParams.set("filter.limit", String(limit));
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, { headers: { ...KROGER_HEADERS, Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Kroger locations lookup failed (${res.status}): ${await res.text()}`);
   const json = await res.json();
   return (json.data ?? []).map(
@@ -182,7 +192,7 @@ async function searchKrogerProducts(
   url.searchParams.set("filter.term", cleanTermForKroger(term));
   url.searchParams.set("filter.locationId", locationId);
   url.searchParams.set("filter.limit", String(limit));
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  const res = await fetch(url, { headers: { ...KROGER_HEADERS, Authorization: `Bearer ${token}` } });
   if (!res.ok) throw new Error(`Kroger product search failed (${res.status}): ${await res.text()}`);
   const maxAgeSeconds = parseMaxAgeSeconds(res.headers.get("cache-control"));
   const json = await res.json();

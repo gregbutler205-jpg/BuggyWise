@@ -53,11 +53,14 @@ export type CompareResult = {
     label: string;
     storeIds: number[];
     grandTotal: number;
+    comparableTotal: number;
+    comparableCoverage: number;
     savings: number;
     marginalSavings: number | null;
     coverage: { priced: number; total: number };
     storeSubtotals: { storeId: number; subtotal: number; itemCount: number }[];
     unpricedItems: { listItemId: number; name: string }[];
+    exclusiveItems: { listItemId: number; name: string; lineTotal: number }[];
     assignments: {
       listItemId: number;
       storeId: number;
@@ -155,11 +158,14 @@ export async function compareList(listId: number, storeIds: number[]): Promise<C
       label: sc.label,
       storeIds: sc.storeIds,
       grandTotal: sc.grandTotal,
+      comparableTotal: sc.comparableTotal,
+      comparableCoverage: sc.comparableCoverage,
       savings: sc.savings,
       marginalSavings: sc.marginalSavings,
       coverage: sc.coverage,
       storeSubtotals: sc.storeSubtotals,
       unpricedItems: sc.unpricedItems,
+      exclusiveItems: sc.exclusiveItems,
       assignments: [...sc.assignments.entries()].map(([listItemId, a]) => ({
         listItemId,
         storeId: a.storeId,

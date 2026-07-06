@@ -19,12 +19,25 @@ export type Scenario = {
   key: string;
   label: string;
   storeIds: number[];
-  // listItemId -> { storeId, product, lineTotal }
+  // listItemId -> { storeId, product, lineTotal } — the FULL plan: every item
+  // this scenario manages to price anywhere, used for the actual checklist
   assignments: Map<number, { storeId: number; product: ScoredProduct; lineTotal: number }>;
   unpricedItems: { listItemId: number; name: string }[];
+  // items this scenario prices that AREN'T available at every store in the
+  // overall comparison — e.g. an item only Walmart carries. Still part of
+  // `assignments`/`grandTotal` (so locking in this plan still buys them),
+  // but excluded from `comparableTotal` so store-vs-store totals stay
+  // apples-to-apples instead of one store looking cheaper just because it
+  // stocks fewer of the list's items.
+  exclusiveItems: { listItemId: number; name: string; lineTotal: number }[];
   storeSubtotals: { storeId: number; subtotal: number; itemCount: number }[];
+  /** real total if you actually shop this plan (includes exclusive items) */
   grandTotal: number;
-  /** vs the best one-stop baseline, on the same set of priced items */
+  /** total over only items priced at every store being compared — the fair
+   *  basis for ranking/baseline/savings across scenarios */
+  comparableTotal: number;
+  comparableCoverage: number;
+  /** vs the best one-stop baseline, on the same comparable item set */
   savings: number;
   marginalSavings: number | null; // vs best scenario with one fewer store
   coverage: { priced: number; total: number };
@@ -46,6 +59,11 @@ function effectivePrice(m: ItemMatch): number | null {
   return l.salePrice ?? l.price;
 }
 
+function isPricedAt(item: ItemPrices, sid: number): boolean {
+  const m = item.byStore.get(sid);
+  return Boolean(m && effectivePrice(m) !== null);
+}
+
 function subsets(ids: number[], size: number): number[][] {
   if (size === 0) return [[]];
   if (ids.length < size) return [];
@@ -60,12 +78,17 @@ function buildScenario(
   key: string,
   label: string,
   storeIds: number[],
-  items: ItemPrices[]
+  items: ItemPrices[],
+  commonItemIds: Set<number>
 ): Scenario {
   const assignments = new Map<number, { storeId: number; product: ScoredProduct; lineTotal: number }>();
   const unpriced: { listItemId: number; name: string }[] = [];
+  const exclusiveItems: { listItemId: number; name: string; lineTotal: number }[] = [];
   const subtotals = new Map<number, { subtotal: number; itemCount: number }>();
   for (const sid of storeIds) subtotals.set(sid, { subtotal: 0, itemCount: 0 });
+
+  let comparableTotal = 0;
+  let comparableCoverage = 0;
 
   for (const item of items) {
     let best: { storeId: number; product: ScoredProduct; lineTotal: number } | null = null;
@@ -79,13 +102,19 @@ function buildScenario(
         best = { storeId: sid, product: m.selected as ScoredProduct, lineTotal };
       }
     }
-    if (best) {
-      assignments.set(item.listItemId, best);
-      const s = subtotals.get(best.storeId)!;
-      s.subtotal += best.lineTotal;
-      s.itemCount += 1;
-    } else {
+    if (!best) {
       unpriced.push({ listItemId: item.listItemId, name: item.name });
+      continue;
+    }
+    assignments.set(item.listItemId, best);
+    const s = subtotals.get(best.storeId)!;
+    s.subtotal += best.lineTotal;
+    s.itemCount += 1;
+    if (commonItemIds.has(item.listItemId)) {
+      comparableTotal += best.lineTotal;
+      comparableCoverage += 1;
+    } else {
+      exclusiveItems.push({ listItemId: item.listItemId, name: item.name, lineTotal: best.lineTotal });
     }
   }
 
@@ -96,10 +125,13 @@ function buildScenario(
     storeIds,
     assignments,
     unpricedItems: unpriced,
+    exclusiveItems,
     storeSubtotals: [...subtotals.entries()]
       .map(([storeId, v]) => ({ storeId, ...v }))
       .filter((s) => s.itemCount > 0),
     grandTotal,
+    comparableTotal,
+    comparableCoverage,
     savings: 0, // filled in after baseline known
     marginalSavings: null,
     coverage: { priced: assignments.size, total: items.length },
@@ -114,21 +146,34 @@ export function buildScenarios(
   if (storeIds.length === 0 || items.length === 0)
     return { scenarios: [], baseline: null, savingsByItem: [] };
 
-  // one-stop scenario per store
-  const oneStops = storeIds.map((sid) =>
-    buildScenario(`one-${sid}`, `Everything at ${storeNames.get(sid)}`, [sid], items)
+  // Items priced at EVERY selected store — the only fair basis for comparing
+  // "everything at store X" totals against each other. Without this, a store
+  // that simply doesn't carry some of the list (health/household items,
+  // regional products, etc.) looks artificially cheaper: its total only
+  // sums the items it happens to price, while another store's total sums
+  // its full, larger set. Comparisons/ranking use `comparableTotal` (this
+  // restricted set); `grandTotal` stays the real, complete cost of actually
+  // shopping a given plan, exclusive items and all.
+  const commonItemIds = new Set(
+    items.filter((it) => storeIds.every((sid) => isPricedAt(it, sid))).map((it) => it.listItemId)
   );
 
-  // baseline = best one-stop *among stores that price the most items*, then cheapest
-  const maxCoverage = Math.max(...oneStops.map((s) => s.coverage.priced));
+  // one-stop scenario per store
+  const oneStops = storeIds.map((sid) =>
+    buildScenario(`one-${sid}`, `Everything at ${storeNames.get(sid)}`, [sid], items, commonItemIds)
+  );
+
+  // baseline = best one-stop *among stores that comparably price the most
+  // items*, then cheapest on that comparable basis
+  const maxCoverage = Math.max(...oneStops.map((s) => s.comparableCoverage));
   const baseline =
     oneStops
-      .filter((s) => s.coverage.priced === maxCoverage)
-      .sort((a, b) => a.grandTotal - b.grandTotal)[0] ?? null;
+      .filter((s) => s.comparableCoverage === maxCoverage)
+      .sort((a, b) => a.comparableTotal - b.comparableTotal)[0] ?? null;
 
   const all: Scenario[] = [...oneStops];
 
-  // best subset of each size ≥ 2 (compare on baseline's item coverage)
+  // best subset of each size ≥ 2 (compare on comparable total/coverage)
   let prevBest: Scenario | null = baseline;
   for (let k = 2; k <= storeIds.length; k++) {
     let bestOfK: Scenario | null = null;
@@ -137,9 +182,10 @@ export function buildScenarios(
         `multi-${subset.join("-")}`,
         subset.map((sid) => storeNames.get(sid)).join(" + "),
         subset,
-        items
+        items,
+        commonItemIds
       );
-      if (!bestOfK || sc.grandTotal < bestOfK.grandTotal || sc.coverage.priced > bestOfK.coverage.priced) {
+      if (!bestOfK || sc.comparableTotal < bestOfK.comparableTotal || sc.comparableCoverage > bestOfK.comparableCoverage) {
         bestOfK = sc;
       }
     }
@@ -152,12 +198,12 @@ export function buildScenarios(
 
   if (baseline) {
     for (const sc of all) {
-      // savings only mean something when the scenario prices at least as many
-      // items as the baseline — a cheaper total that skips half the list isn't
-      // a saving
+      // savings only mean something when the scenario comparably prices at
+      // least as many items as the baseline — a cheaper total that skips
+      // half the list isn't a saving
       sc.savings =
-        sc.coverage.priced >= baseline.coverage.priced
-          ? baseline.grandTotal - sc.grandTotal
+        sc.comparableCoverage >= baseline.comparableCoverage
+          ? baseline.comparableTotal - sc.comparableTotal
           : 0;
     }
   }
