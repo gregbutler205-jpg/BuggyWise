@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db, lists, listItems } from "@/db";
+import { detectImplicitBrandPreference } from "@/lib/item-name-parser";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ export async function POST(req: Request) {
     body.items ?? [];
   for (const [idx, it] of items.entries()) {
     if (!it.item?.trim()) continue;
+    const implicit = detectImplicitBrandPreference(it.item);
     await db.insert(listItems).values({
       listId: list.id,
       rawText: it.item,
@@ -24,6 +26,7 @@ export async function POST(req: Request) {
       unit: it.unit ?? null,
       notes: it.notes ?? null,
       sortOrder: idx,
+      ...(implicit && { brandPreference: implicit.brandPreference, preferredBrand: implicit.preferredBrand }),
     });
   }
   return NextResponse.json({ id: list.id });

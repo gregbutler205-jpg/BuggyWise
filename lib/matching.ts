@@ -15,6 +15,7 @@ import {
   type MatchCandidate,
 } from "../db";
 import { claude, hasClaudeKey, extractJson, CLAUDE_MODEL } from "./claude";
+import { STORE_BRANDS } from "./store-brands";
 
 export type PricedProduct = {
   id: number;
@@ -58,14 +59,6 @@ const STOPWORDS = new Set([
   // "Select-a-Size" paper towels), not just a commodity descriptor.
   "all", "natural", "organic",
 ]);
-
-// Known store-brand (private label) names, spec §6 "Any brand allows
-// store-brand swaps". Keyed by a store-name substring since store rows are
-// user-added with arbitrary names. Extend as more chains get real data.
-const STORE_BRANDS: Record<string, string[]> = {
-  walmart: ["great value", "equate", "mainstays", "marketside", "freshness guaranteed", "sam's choice"],
-  kroger: ["kroger", "simple truth", "private selection"],
-};
 
 function storeBrandFamily(storeName: string): string[] | null {
   const lower = storeName.toLowerCase();

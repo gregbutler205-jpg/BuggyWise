@@ -42,6 +42,7 @@ export function ScenarioPicker({ result }: { result: CompareResult }) {
             price: a.lineTotal,
             confidence: a.confidence ?? "unknown",
             saleEnds: a.saleEnds,
+            weightAdjusted: a.weightAdjusted,
           })),
           storeSubtotals: selected.storeSubtotals.map((s) => ({ storeId: s.storeId, subtotal: s.subtotal })),
           grandTotal: selected.grandTotal,
@@ -138,8 +139,11 @@ export function ScenarioPicker({ result }: { result: CompareResult }) {
                           {a.saleEnds && (
                             <span className="text-bw-orange-dark"> · ad price ends {a.saleEnds}</span>
                           )}
+                          {a.weightAdjusted && (
+                            <span className="text-bw-orange-dark"> · 🍗 priced per lb, final total varies by weight</span>
+                          )}
                         </span>
-                        <span className="shrink-0">{fmt(a.lineTotal)}</span>
+                        <span className="shrink-0">{a.weightAdjusted ? "≈ " : ""}{fmt(a.lineTotal)}</span>
                       </li>
                     );
                   })}

@@ -48,7 +48,7 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <header className="bg-white border-b border-bw-green/20 sticky top-0 z-10">
+        <header className="bg-white border-b border-bw-green/20 sticky top-0 z-10 print:hidden">
           <div className="max-w-3xl mx-auto px-4 py-2 flex items-center gap-4">
             <Link href="/" className="flex items-center gap-2 shrink-0">
               <Image
@@ -74,7 +74,7 @@ export default function RootLayout({
           </div>
         </header>
         <main className="flex-1 max-w-3xl w-full mx-auto px-4 py-6">{children}</main>
-        <footer className="text-center text-xs text-bw-ink/50 py-4">
+        <footer className="text-center text-xs text-bw-ink/50 py-4 print:hidden">
           BuggyWise — search smart, save big 🛒
         </footer>
       </body>

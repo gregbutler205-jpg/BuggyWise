@@ -54,23 +54,29 @@ export async function parseListText(text: string): Promise<ParsedListItem[]> {
 }
 
 export async function parseListImage(base64: string, mediaType: string): Promise<ParsedListItem[]> {
+  // Claude's image blocks only accept actual image formats — a PDF (order
+  // confirmation, receipt export, etc.) needs the separate "document" block
+  // type instead, or the API rejects the request outright (400
+  // invalid_request_error) rather than degrading gracefully.
+  const media =
+    mediaType === "application/pdf"
+      ? ({ type: "document", source: { type: "base64", media_type: "application/pdf", data: base64 } } as const)
+      : ({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+            data: base64,
+          },
+        } as const);
+
   const resp = await claude().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: 4000,
     messages: [
       {
         role: "user",
-        content: [
-          {
-            type: "image",
-            source: {
-              type: "base64",
-              media_type: mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
-              data: base64,
-            },
-          },
-          { type: "text", text: PARSE_PROMPT },
-        ],
+        content: [media, { type: "text", text: PARSE_PROMPT }],
       },
     ],
   });

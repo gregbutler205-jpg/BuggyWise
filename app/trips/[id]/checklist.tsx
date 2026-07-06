@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { TripScenario } from "@/db/schema";
 
 const CONF: Record<string, string> = {
@@ -28,6 +28,21 @@ export function Checklist({
   itemNames: Record<number, string>;
 }) {
   const [checked, setChecked] = useState<Record<string, boolean>>(checkedOff);
+  // null = print everything; a storeId = print only that store's list (set
+  // by a per-store "Print" button, reset once the print dialog closes)
+  const [printOnly, setPrintOnly] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (printOnly === null) return;
+    const reset = () => setPrintOnly(null);
+    window.addEventListener("afterprint", reset);
+    // let the single-store view render before the print dialog opens
+    const t = setTimeout(() => window.print(), 50);
+    return () => {
+      window.removeEventListener("afterprint", reset);
+      clearTimeout(t);
+    };
+  }, [printOnly]);
 
   async function toggle(listItemId: number) {
     const next = { ...checked, [listItemId]: !checked[listItemId] };
@@ -76,7 +91,7 @@ export function Checklist({
         </div>
       </div>
 
-      <div className="text-sm text-bw-ink/60">
+      <div className="text-sm text-bw-ink/60 print:hidden">
         {done}/{total} picked up
         {scenario.savings > 0.005 && (
           <span className="text-bw-green-dark font-medium"> · saving {fmt(scenario.savings)} this trip 🐞</span>
@@ -84,7 +99,7 @@ export function Checklist({
       </div>
 
       {/* shopping route (spec §3): ordered stops with map deep-links */}
-      {scenario.storeIds.length > 1 && (
+      {scenario.storeIds.length > 1 && printOnly === null && (
         <div className="bg-bw-cream rounded-xl px-4 py-3 text-sm print:hidden">
           🛣️ Route:{" "}
           {scenario.storeIds.map((sid, i) => (
@@ -103,15 +118,26 @@ export function Checklist({
         </div>
       )}
 
-      {scenario.storeIds.map((sid) => {
+      {scenario.storeIds
+        .filter((sid) => printOnly === null || sid === printOnly)
+        .map((sid) => {
         const assignments = scenario.assignments.filter((a) => a.storeId === sid);
         if (assignments.length === 0) return null;
         const sub = scenario.storeSubtotals.find((s) => s.storeId === sid);
         return (
-          <section key={sid} className="bg-white rounded-xl border border-bw-ink/10 p-4">
-            <div className="flex justify-between font-semibold text-lg border-b border-bw-ink/10 pb-2 mb-2">
+          <section key={sid} className="bg-white rounded-xl border border-bw-ink/10 p-4 print:break-after-page last:print:break-after-auto">
+            <div className="flex justify-between items-center font-semibold text-lg border-b border-bw-ink/10 pb-2 mb-2">
               <span>{storeNames[sid]}</span>
-              <span>{sub ? fmt(sub.subtotal) : ""}</span>
+              <span className="flex items-center gap-2">
+                <button
+                  onClick={() => setPrintOnly(sid)}
+                  className="print:hidden text-xs font-medium border border-bw-ink/20 rounded-full px-2.5 py-1 hover:bg-bw-cream"
+                  title={`Print just ${storeNames[sid]}'s list`}
+                >
+                  🖨️ Print
+                </button>
+                <span>{sub ? fmt(sub.subtotal) : ""}</span>
+              </span>
             </div>
             <ul className="divide-y divide-bw-ink/5">
               {assignments.map((a) => (
@@ -132,9 +158,10 @@ export function Checklist({
                       <span className="block text-xs text-bw-ink/50 truncate">
                         {CONF[a.confidence] ?? "🔴"} {a.productName}
                         {a.saleEnds ? ` · sale ends ${a.saleEnds}` : ""}
+                        {a.weightAdjusted ? " · priced per lb, final total varies by weight" : ""}
                       </span>
                     </span>
-                    <span className="shrink-0 font-medium">{fmt(a.price)}</span>
+                    <span className="shrink-0 font-medium">{a.weightAdjusted ? "≈ " : ""}{fmt(a.price)}</span>
                   </button>
                 </li>
               ))}
@@ -143,10 +170,12 @@ export function Checklist({
         );
       })}
 
-      <div className="flex justify-between font-bold text-xl bg-white rounded-xl border border-bw-ink/10 p-4">
-        <span>Grand total</span>
-        <span>{fmt(scenario.grandTotal)}</span>
-      </div>
+      {printOnly === null && (
+        <div className="flex justify-between font-bold text-xl bg-white rounded-xl border border-bw-ink/10 p-4">
+          <span>Grand total</span>
+          <span>{fmt(scenario.grandTotal)}</span>
+        </div>
+      )}
     </div>
   );
 }

@@ -112,6 +112,14 @@ export type KrogerProduct = {
   size: string | null;
   regularPrice: number | null;
   promoPrice: number | null;
+  // Kroger's own signal for variable-weight items (meat, some produce): when
+  // true, `size` (e.g. "1 lb") is a UNIT OF MEASURE for the price, not the
+  // actual package weight — the price is really $/lb, and the real total
+  // depends on the specific package's weight. Confirmed empirically
+  // (2026-07): raw chicken/meat items return soldBy: "WEIGHT" with size
+  // "1 lb", the same convention the owner's Walmart seed data already uses
+  // (weightAdjusted column) for exactly this reason.
+  weightAdjusted: boolean;
 };
 
 // Confirmed empirically (2026-07): searching Kroger's Products API for a term
@@ -123,6 +131,27 @@ export type KrogerProduct = {
 // likely treated as a reserved/wildcard token by their search engine.
 const KROGER_BREAKING_WORDS = /\ball\b/gi;
 
+// Confirmed empirically (2026-07), root-causing a real substitution the
+// owner flagged (Kroger's own "Big K" store-brand cola returned instead of
+// Coca-Cola Zero Sugar): Kroger's search is a strict, low-recall matcher —
+// generic packaging/marketing filler words that Kroger's own (terser)
+// product titles never use can silently exclude the real product from the
+// result set, or badly skew relevance toward an unrelated product. Direct
+// test: "Coca-Cola Zero Sugar Soda Pop Fridge Pack Cans" (Walmart's literal
+// product name) returned ONLY Big K — the real Coca-Cola product wasn't even
+// a candidate — while "Coca-Cola Zero Sugar Soda Cans" (same query minus
+// "Pop"/"Fridge"/"Pack") correctly surfaced it. Same failure class as
+// KROGER_BREAKING_WORDS above, just a different confirmed-bad word set.
+const KROGER_FILLER_WORDS = /\b(fridge|pop|pack)\b/gi;
+
+// Trailing size/quantity text ("12 fl oz", "2 liter", "8 Count") doesn't
+// help Kroger find the right product — the adapter uses Kroger's OWN
+// returned size/price data regardless of what's searched — and, like the
+// filler words above, was observed to actively hurt relevance rather than
+// just being inert noise.
+const TRAILING_SIZE_RE =
+  /,?\s*\d+(\.\d+)?\s*(fl\.?\s*oz|ounces?|oz|ct|count|pk|packs?|lbs?|pounds?|liters?|\bl\b|gal|gallons?|quarts?|qt|dozen)\.?\s*$/i;
+
 /**
  * Kroger's Products API rejects `filter.term` values over 8 words
  * (PRODUCT-2019). Long list-item names ("Jell-O Lemon-Lime Artificially
@@ -132,7 +161,12 @@ const KROGER_BREAKING_WORDS = /\ball\b/gi;
  * from the front, which tends to cut off exactly the product type.
  */
 function cleanTermForKroger(term: string): string {
-  const cleaned = term.replace(KROGER_BREAKING_WORDS, " ").replace(/\s+/g, " ").trim();
+  let cleaned = term
+    .replace(KROGER_BREAKING_WORDS, " ")
+    .replace(KROGER_FILLER_WORDS, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  cleaned = cleaned.replace(TRAILING_SIZE_RE, "").trim();
   const words = cleaned.split(/\s+/);
   if (words.length <= 8) return cleaned;
   return [...words.slice(0, 4), ...words.slice(-4)].join(" ");
@@ -157,7 +191,7 @@ async function searchKrogerProducts(
       productId: string;
       description: string;
       brand?: string;
-      items?: { size?: string; price?: { regular?: number; promo?: number } }[];
+      items?: { size?: string; soldBy?: string; price?: { regular?: number; promo?: number } }[];
     }): KrogerProduct => {
       const item = p.items?.[0];
       return {
@@ -167,6 +201,7 @@ async function searchKrogerProducts(
         size: item?.size ?? null,
         regularPrice: item?.price?.regular ?? null,
         promoPrice: item?.price?.promo || null,
+        weightAdjusted: item?.soldBy === "WEIGHT",
       };
     }
   );
@@ -217,9 +252,15 @@ export async function syncKrogerTerm(storeId: number, locationId: string, term: 
           sizeText: p.size,
           sizeQty: size?.qty ?? null,
           sizeUnit: size?.unit ?? null,
+          weightAdjusted: p.weightAdjusted,
         })
         .returning()
         .get();
+    } else if (product.weightAdjusted !== p.weightAdjusted) {
+      // row predates this flag (or Kroger's soldBy classification changed) —
+      // keep it in sync rather than only setting it at insert time
+      await db.update(storeProducts).set({ weightAdjusted: p.weightAdjusted }).where(eq(storeProducts.id, product.id));
+      product = { ...product, weightAdjusted: p.weightAdjusted };
     }
 
     const price = p.promoPrice ?? p.regularPrice;

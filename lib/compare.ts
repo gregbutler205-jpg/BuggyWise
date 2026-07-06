@@ -23,6 +23,10 @@ export type SerializedMatch = {
   observedAt: string | null;
   score: number | null;
   matchSource: string;
+  // true when the store's price is really $/lb (or similar unit), not a
+  // fixed package price — the real total depends on the specific item's
+  // weight (Kroger's soldBy: "WEIGHT" signal; also set by Walmart seed data).
+  weightAdjusted: boolean;
   alternates: {
     productId: number;
     productName: string;
@@ -62,6 +66,7 @@ export type CompareResult = {
       lineTotal: number;
       confidence: string | null;
       saleEnds: string | null;
+      weightAdjusted: boolean;
     }[];
   }[];
   baselineKey: string | null;
@@ -122,6 +127,7 @@ export async function compareList(listId: number, storeIds: number[]): Promise<C
         observedAt: m.selected?.latest?.observedAt ?? null,
         score: m.selected?.score ?? null,
         matchSource: m.matchSource,
+        weightAdjusted: m.selected?.weightAdjusted ?? false,
         alternates: m.alternates.map((a) => ({
           productId: a.id,
           productName: a.name,
@@ -162,6 +168,7 @@ export async function compareList(listId: number, storeIds: number[]): Promise<C
         lineTotal: a.lineTotal,
         confidence: a.product.latest?.confidence ?? null,
         saleEnds: a.product.latest?.saleEnds ?? null,
+        weightAdjusted: a.product.weightAdjusted,
       })),
     })),
     baselineKey: baseline?.key ?? null,

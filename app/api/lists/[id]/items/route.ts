@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db, listItems } from "@/db";
+import { detectImplicitBrandPreference } from "@/lib/item-name-parser";
 
 export const runtime = "nodejs";
 
@@ -12,6 +13,7 @@ export async function POST(req: Request, ctx: Ctx) {
   const body = await req.json();
   if (!body.name?.trim()) return NextResponse.json({ error: "Name required" }, { status: 400 });
   const max = (await db.select().from(listItems).where(eq(listItems.listId, Number(id)))).length;
+  const implicit = detectImplicitBrandPreference(body.name);
   const item = await db
     .insert(listItems)
     .values({
@@ -21,6 +23,7 @@ export async function POST(req: Request, ctx: Ctx) {
       unit: body.unit ?? null,
       notes: body.notes ?? null,
       sortOrder: max,
+      ...(implicit && { brandPreference: implicit.brandPreference, preferredBrand: implicit.preferredBrand }),
     })
     .returning()
     .get();

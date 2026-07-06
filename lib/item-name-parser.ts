@@ -1,4 +1,5 @@
 import { parseSize, type ParsedSize } from "./units";
+import { STORE_BRANDS } from "./store-brands";
 
 // Walmart item names embed brand + size:
 //   "Great Value Fat-Free Milk, Gallon, 128 fl oz"
@@ -77,4 +78,39 @@ const NON_GROCERY_RE =
 
 export function looksNonGrocery(name: string): boolean {
   return NON_GROCERY_RE.test(name);
+}
+
+const ALL_STORE_BRAND_NAMES = new Set(Object.values(STORE_BRANDS).flat());
+
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+export type ImplicitBrandPreference = {
+  brandPreference: "store_brand" | "specific";
+  preferredBrand: string | null;
+};
+
+/**
+ * A shopper who writes "Coca-Cola Zero Sugar..." or "Tyson Chicken..." named
+ * a specific brand on purpose — leaving brandPreference at its "any" default
+ * let the matcher's store-brand nudge silently swap it for an unrelated
+ * private label (e.g. Kroger's "Big K" for Coca-Cola). Detect a known brand
+ * named in the item's own text and turn that into a sane default preference:
+ * a *store's own* private label (e.g. "Great Value") becomes "store_brand"
+ * (so it correctly swaps to each store's own private label per spec §6),
+ * while any other recognized brand becomes "specific" (prefer that brand,
+ * penalize other companies' products, but still allow substitutes).
+ */
+export function detectImplicitBrandPreference(name: string): ImplicitBrandPreference | null {
+  const lower = name.toLowerCase();
+  for (const b of KNOWN_BRANDS) {
+    const bLower = b.toLowerCase();
+    if (new RegExp(`\\b${escapeRegex(bLower)}\\b`, "i").test(lower)) {
+      return ALL_STORE_BRAND_NAMES.has(bLower)
+        ? { brandPreference: "store_brand", preferredBrand: null }
+        : { brandPreference: "specific", preferredBrand: b };
+    }
+  }
+  return null;
 }

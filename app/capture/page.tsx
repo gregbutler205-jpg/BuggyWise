@@ -83,7 +83,7 @@ export default function CapturePage() {
         <label className="block border-2 border-dashed border-bw-green/40 rounded-xl p-8 text-center cursor-pointer bg-white hover:bg-bw-cream">
           <input
             type="file"
-            accept="image/*"
+            accept="image/*,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             capture="environment"
             className="hidden"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
@@ -94,7 +94,7 @@ export default function CapturePage() {
             <span className="text-bw-ink/60">
               Tap to snap a photo of your handwritten list
               <br />
-              or choose an image
+              or choose an image, PDF, or Word doc
             </span>
           )}
         </label>

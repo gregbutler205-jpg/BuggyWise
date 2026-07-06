@@ -192,6 +192,10 @@ export type TripScenario = {
     price: number;
     confidence: string;
     saleEnds?: string | null;
+    // true when the store's price is $/lb (or similar) rather than a fixed
+    // package price — carried through to the checklist so the final at-register
+    // total is understood to vary by the actual item's weight.
+    weightAdjusted?: boolean;
   }[];
   storeSubtotals: { storeId: number; subtotal: number }[];
   grandTotal: number;
